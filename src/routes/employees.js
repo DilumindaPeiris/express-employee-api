@@ -1,10 +1,8 @@
 import express from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { openDb } from '../db.js';
 
 const router = express.Router();
-
-let nextId = 2;
-const employees = new Map([[1, { id: 1, name: 'Demo Employee', age: 25, salary: 75000 }]]);
 
 function validate(body) {
   return body && typeof body.name === 'string' && body.name.trim().length > 0
@@ -18,31 +16,56 @@ function idFrom(req) {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
-router.get('/', (_req, res) => res.json([...employees.values()]));
+router.get('/', async (_req, res) => {
+  const db = await openDb();
+  const employees = await db.all('SELECT * FROM employees');
+  res.json(employees);
+});
 
-router.get('/:id', (req, res) => {
-  const employee = employees.get(idFrom(req));
+router.get('/:id', async (req, res) => {
+  const db = await openDb();
+  const id = idFrom(req);
+  if (!id) return res.status(404).json({ error: 'Employee not found.' });
+
+  const employee = await db.get('SELECT * FROM employees WHERE id = ?', [id]);
   return employee ? res.json(employee) : res.status(404).json({ error: 'Employee not found.' });
 });
 
-router.post('/', authenticate, (req, res) => {
+router.post('/', authenticate, async (req, res) => {
   if (!validate(req.body)) return res.status(400).json({ error: 'Provide a name, integer age 18–100, and non-negative numeric salary.' });
-  const employee = { id: nextId++, name: req.body.name.trim(), age: req.body.age, salary: req.body.salary };
-  employees.set(employee.id, employee);
+  
+  const db = await openDb();
+  const result = await db.run('INSERT INTO employees (name, age, salary) VALUES (?, ?, ?)', 
+    [req.body.name.trim(), req.body.age, req.body.salary]);
+    
+  const employee = await db.get('SELECT * FROM employees WHERE id = ?', [result.lastID]);
   res.status(201).json(employee);
 });
 
-router.put('/:id', authenticate, (req, res) => {
+router.put('/:id', authenticate, async (req, res) => {
   const id = idFrom(req);
-  if (!employees.has(id)) return res.status(404).json({ error: 'Employee not found.' });
+  if (!id) return res.status(404).json({ error: 'Employee not found.' });
   if (!validate(req.body)) return res.status(400).json({ error: 'Invalid employee fields.' });
-  const employee = { id, name: req.body.name.trim(), age: req.body.age, salary: req.body.salary };
-  employees.set(id, employee);
+  
+  const db = await openDb();
+  const existing = await db.get('SELECT * FROM employees WHERE id = ?', [id]);
+  if (!existing) return res.status(404).json({ error: 'Employee not found.' });
+
+  await db.run('UPDATE employees SET name = ?, age = ?, salary = ? WHERE id = ?',
+    [req.body.name.trim(), req.body.age, req.body.salary, id]);
+    
+  const employee = await db.get('SELECT * FROM employees WHERE id = ?', [id]);
   res.json(employee);
 });
 
-router.delete('/:id', authenticate, (req, res) => {
-  if (!employees.delete(idFrom(req))) return res.status(404).json({ error: 'Employee not found.' });
+router.delete('/:id', authenticate, async (req, res) => {
+  const id = idFrom(req);
+  if (!id) return res.status(404).json({ error: 'Employee not found.' });
+  
+  const db = await openDb();
+  const result = await db.run('DELETE FROM employees WHERE id = ?', [id]);
+  
+  if (result.changes === 0) return res.status(404).json({ error: 'Employee not found.' });
   res.status(204).end();
 });
 

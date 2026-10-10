@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { app } from '../src/app.js';
+import { openDb } from '../src/db.js';
+
+process.env.NODE_ENV = 'test';
+await openDb();
 
 test('Employee API with Auth', async (t) => {
   let token = '';
