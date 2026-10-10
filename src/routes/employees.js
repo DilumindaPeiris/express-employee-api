@@ -5,9 +5,11 @@ import { validate, idFrom } from '../utils/validation.js';
 
 const router = express.Router();
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
+  const limit = parseInt(req.query.limit, 10) || 100;
+  const offset = parseInt(req.query.offset, 10) || 0;
   const db = await openDb();
-  const employees = await db.all('SELECT * FROM employees');
+  const employees = await db.all('SELECT * FROM employees LIMIT ? OFFSET ?', [limit, offset]);
   res.json(employees);
 });
 
